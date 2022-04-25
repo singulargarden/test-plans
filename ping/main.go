@@ -216,14 +216,15 @@ func runPing(runenv *runtime.RunEnv, initCtx *run.InitContext) error {
 	// ☎️  Connect to all other peers.
 	//
 	// Note: we sidestep simultaneous connect issues by ONLY connecting to peers
-	// who published their addresses before us (this is enough to dedup and avoid
+	// that have a peerID smaller to our (this is enough to dedup and avoid
 	// two peers dialling each other at the same time).
 	//
 	// We can do this because sync service pubsub is ordered.
 	for _, ai := range peers {
-		if ai.ID == id {
-			break
+		if ai.ID >= id {
+			continue
 		}
+		runenv.RecordMessage("Dial peer: %s", ai.ID)
 		if err := host.Connect(ctx, *ai); err != nil {
 			return err
 		}
