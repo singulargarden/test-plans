@@ -10,7 +10,9 @@ name = "ping"
 enabled                = true
 enable_go_build_cache  = false
 build_base_image       = "golang:1.17-buster"
-go_proxy_mode          = "direct"
+# go_proxy_mode          = "direct"
+go_proxy_mode          = "remote"
+go_proxy_url           = "http://95.216.118.233:8081" # laurentsenta test machine
 
 [builders."docker:go".dockerfile_extensions]
 # TODO: when we rewrite dependencies, if the version is a git branch like `master`,
