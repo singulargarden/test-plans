@@ -10,6 +10,7 @@ name = "ping"
 enabled                = true
 enable_go_build_cache  = false
 build_base_image       = "golang:1.17-buster"
+go_proxy_mode          = "direct"
 
 [builders."docker:go".dockerfile_extensions]
 # TODO: when we rewrite dependencies, if the version is a git branch like `master`,
@@ -22,9 +23,6 @@ pre_build          = "RUN cd ${PLAN_DIR} && go mod download github.com/libp2p/go
 "local:docker"  = { enabled = true }
 "local:exec"    = { enabled = true }
 "cluster:k8s"   = { enabled = true }
-
-[global.build_config]
-  enable_go_build_cache = true
 
 [[testcases]]
 name = "ping"
