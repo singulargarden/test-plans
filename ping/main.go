@@ -78,7 +78,7 @@ func runPing(runenv *runtime.RunEnv, initCtx *run.InitContext) error {
 	// formatting strings.
 	runenv.RecordMessage("started test instance; params: secure_channel=%s, max_latency_ms=%d, iterations=%d", secureChannel, maxLatencyMs, iterations)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// 🐣  Wait until all instances in this test run have signalled.
@@ -139,6 +139,8 @@ func runPing(runenv *runtime.RunEnv, initCtx *run.InitContext) error {
 	// This adds a stream handler to our Host so it can process inbound pings,
 	// and the returned PingService instance allows us to perform outbound pings.
 	ping := ping.NewPingService(host)
+
+	time.Sleep(5 * time.Second)
 
 	// Record our listen addrs.
 	runenv.RecordMessage("my listen addrs: %v", host.Addrs())
@@ -224,16 +226,30 @@ func runPing(runenv *runtime.RunEnv, initCtx *run.InitContext) error {
 		if ai.ID >= id {
 			continue
 		}
+		// fmt.Printf("A, %v", ai)
+		runenv.RecordMessage("A, %v", ai)
 		runenv.RecordMessage("Dial peer: %s", ai.ID)
+		// fmt.Printf("B, %v", ai)
+		runenv.RecordMessage("STARTED SLEEPING, %v", ai)
+		time.Sleep(30 * time.Second)
+		runenv.RecordMessage("STOPPED SLEEPING, %v", ai)
 		if err := host.Connect(ctx, *ai); err != nil {
+			// << SINGLE 1 (FAILED TO DIAL)
+			runenv.RecordMessage("FAILED CONNECT, %v", ai)
+			// runenv.RecordMessage("C, %v", err)
 			return err
 		}
+		runenv.RecordMessage("DONE CONNECT, %v", ai)
+		runenv.RecordMessage("D, %v", ai)
 	}
-
+	// fmt.Printf("E, %v", 0)
+	// runenv.RecordMessage("E, %v", 0)
 	runenv.RecordMessage("done dialling my peers")
 
+	// fmt.Printf("SIGNAL AND WAIT, %v", 0)
+
 	// Wait for all peers to signal that they're done with the connection phase.
-	initCtx.SyncClient.MustSignalAndWait(ctx, "connected", runenv.TestInstanceCount)
+	initCtx.SyncClient.MustSignalAndWait(ctx, "connected", runenv.TestInstanceCount) // << SINGLE 0
 
 	// 📡  Let's ping all our peers without any traffic shaping rules.
 	if err := pingPeers("initial"); err != nil {
