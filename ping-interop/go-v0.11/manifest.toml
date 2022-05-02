@@ -10,6 +10,12 @@ name = "ping"
 enabled                = true
 enable_go_build_cache  = false
 build_base_image       = "golang:1.14-buster"
+# running on k8s:
+# push_registry=true
+# go_proxy_mode="remote"
+# go_proxy_url="http://localhost:8081"
+# registry_type="aws"
+# /k8s
 
 [builders."docker:go".dockerfile_extensions]
 pre_build          = "RUN cd ${PLAN_DIR} && go mod download github.com/libp2p/go-libp2p"
@@ -20,7 +26,7 @@ pre_build          = "RUN cd ${PLAN_DIR} && go mod download github.com/libp2p/go
 "cluster:k8s"   = { enabled = true }
 
 [global.build_config]
-  enable_go_build_cache = true
+# enable_go_build_cache = true
 
 [[testcases]]
 name = "ping"
