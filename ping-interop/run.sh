@@ -7,21 +7,22 @@ set -x
 # https://github.com/galargh/testground-github-action/blob/master/entrypoint.sh
 
 SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
+TG_RUNNER=local:docker
 if [ "${GITHUB_ACTIONS}" = "true" ]; then SLEEP_TIME=20; else SLEEP_TIME=2; fi
 
-testground healthcheck --runner local:docker --fix
+testground healthcheck --runner "${TG_RUNNER}" --fix
 
 testground run composition -f "${SCRIPT_DIR}/_compositions/2-versions.toml"  \
     --metadata-repo "${GITHUB_REPOSITORY}"            \
     --metadata-branch "${GITHUB_REF#refs/heads/}"     \
     --metadata-commit "${GITHUB_SHA}" | tee run.out
 
-TGID=$(awk '/run is queued with ID/ {print $10}' <run.out)
+TG_ID=$(awk '/run is queued with ID/ {print $10}' <run.out)
 
 while [ "${status}" != "complete" -a "${status}" != "canceled" ]
 do
 	sleep ${SLEEP_TIME}
-	status=$(testground status -t "${TGID}" | awk '/Status/ {print $2}')
+	status=$(testground status -t "${TG_ID}" | awk '/Status/ {print $2}')
 	echo "last polled status is ${status}"
 	echo "${OUTPUT_STATUS}${status}"
 done
@@ -29,12 +30,12 @@ done
 # NOTE: we skip this from the original script because
 #		this will likely kill sidecar & other relevant containers.
 # echo "terminating remaining containers"
-# testground terminate --runner local:docker
+# testground terminate --runner "${TG_RUNNER}"
 
 echo -n "Testground ended: "; date
 
 echo getting extended status
-testground status -t "${TGID}" --extended  | tee extendedstatus.out
+testground status -t "${TG_ID}" --extended  | tee extendedstatus.out
 
 # Get the extened status, which includes a "Result" section.
 # Capture the line that occurs after "Result:"
@@ -60,5 +61,7 @@ outcome=$(echo "${extstatus}" | jq ".outcome")
 echo "the extended status was ${extstatus}"
 echo "The outcome of this test was ${outcome}"
 echo "${OUTPUT_OUTCOME}${outcome}"
+
+testground collect --runner "${TG_RUNNER}" "${TG_ID}"
 
 test "${outcome}" = "\"success\"" && exit 0 || exit 1

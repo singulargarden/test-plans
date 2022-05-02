@@ -61,4 +61,5 @@ jobs:
           path: |
             ~/testground/
             testground.*
-            test-plans/*.out
+            test-plans/*/*.out
+            test-plans/*/*.tgz
