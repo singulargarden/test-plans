@@ -68,8 +68,15 @@ jobs:
           backend_proto: ${{ env.testground_endpoint_proto }}
           plan_directory: ./test-plans/${{ inputs.testsuite }}
           composition_file: _compositions/2-versions.toml
+      - name: test expressions
+        if: ${{ always() }}
+        run: |
+          echo ${{ steps.run.outputs.output_id == '' }}
+          echo ${{ steps.run.outputs.output_id == 0 }}
+          echo ${{ steps.run.outputs.output_id == null }}
       - name: collect result
-        if: ${{ failure() && steps.run.outputs.output_id == "" }}
+        if: ${{ failure() }}
+        # if: ${{ failure() && steps.run.outputs.output_id != "" }}
         run: |
           testground collect ${{ steps.run.outputs.output_id }} --extended
       - uses: actions/upload-artifact@v3
