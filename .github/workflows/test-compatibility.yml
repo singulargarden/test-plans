@@ -69,7 +69,7 @@ jobs:
           plan_directory: ./test-plans/${{ inputs.testsuite }}
           composition_file: _compositions/2-versions.toml
       - name: collect result
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.run.outputs.output_id == "" }}
         run: |
           testground collect ${{ steps.run.outputs.output_id }} --extended
       - uses: actions/upload-artifact@v3
