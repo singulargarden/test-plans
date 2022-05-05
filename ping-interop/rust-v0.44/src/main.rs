@@ -1,95 +1,142 @@
+use std::collections::HashSet;
+use std::str::FromStr;
+
 use env_logger::Env;
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
-use libp2p::{identity, PeerId};
+use futures::FutureExt;
+use libp2p::futures::StreamExt;
+use libp2p::swarm::{Swarm, SwarmEvent};
+use libp2p::{identity, multiaddr::Protocol, ping, Multiaddr, PeerId};
 
 const LISTENING_PORT: u16 = 1234;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Added for tests
-    let local_key = identity::Keypair::generate_ed25519();
-    let local_peer_id = PeerId::from(local_key.public());
-    println!("Local peer id: {:?}", local_peer_id);
-
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
     let (client, run_params) = testground::client::Client::new().await?;
+    let ic = testground::invoker::init(client, run_params).await?;
 
-    client.wait_network_initialized().await?;
+    ic.wait_all_instances_initialized().await?;
 
-    let seq = client
-        .signal_and_wait("ip-allocation", run_params.test_instance_count)
-        .await?;
+    let mut swarm = {
+        let local_key = identity::Keypair::generate_ed25519();
+        let local_peer_id = PeerId::from(local_key.public());
+        println!("Local peer id: {:?}", local_peer_id);
 
-    println!("Seq is: {:?}", seq);
-
-    let ip_addr = match run_params.test_subnet {
-        ipnetwork::IpNetwork::V4(network) => {
-            let mut octets = network.ip().octets();
-            octets[2] = ((seq >> 8) + 1) as u8;
-            octets[3] = seq as u8;
-            octets.into()
-        }
-        _ => unimplemented!(),
+        Swarm::new(
+            libp2p::development_transport(local_key).await?,
+            ping::Behaviour::new(ping::Config::new().with_keep_alive(true)),
+            local_peer_id,
+        )
     };
 
-    client
-        .configure_network(testground::network_conf::NetworkConfiguration {
-            network: "default".to_string(),
-            ipv4: Some(ipnetwork::Ipv4Network::new(ip_addr, 32).unwrap()),
-            ipv6: None,
-            enable: true,
-            default: testground::network_conf::LinkShape {
-                latency: 10000000,
-                jitter: 0,
-                bandwidth: 1048576,
-                filter: testground::network_conf::FilterAction::Accept,
-                loss: 0.0,
-                corrupt: 0.0,
-                corrupt_corr: 0.0,
-                reorder: 0.0,
-                reorder_corr: 0.0,
-                duplicate: 0.0,
-                duplicate_corr: 0.0,
-            },
-            rules: None,
-            callback_state: "network-configured".to_string(),
-            callback_target: None,
-            routing_policy: testground::network_conf::RoutingPolicyType::AllowAll,
-        })
-        .await?;
+    let local_addr: Multiaddr = {
+        let ip_addr = match if_addrs::get_if_addrs()
+            .unwrap()
+            .into_iter()
+            .find(|iface| iface.name == "eth1")
+            .unwrap()
+            .addr
+            .ip()
+        {
+            std::net::IpAddr::V4(addr) => addr,
+            std::net::IpAddr::V6(_) => unimplemented!(),
+        };
 
-    match seq {
-        1 => {
-            println!("Test instance, listening for incoming connections.");
+        Multiaddr::empty()
+            .with(Protocol::Ip4(ip_addr))
+            .with(Protocol::Tcp(LISTENING_PORT))
+    };
 
-            let listener = TcpListener::bind(("0.0.0.0", LISTENING_PORT))?;
+    println!(
+        "Test instance, listening for incoming connections on: {:?}.",
+        local_addr
+    );
+    swarm.listen_on(local_addr.clone())?;
 
-            client.signal("listening".to_string()).await?;
-
-            let mut connections = listener.incoming();
-
-            for _ in 0..(run_params.test_instance_count - 1) {
-                connections.next().expect("Listener not to close.")?;
-                println!("Established inbound TCP connection.");
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                assert_eq!(address, local_addr);
+                break;
             }
-        }
-        _ => {
-            println!("Test instance, connecting to listening instance.");
-
-            client.barrier("listening".to_string(), 1).await?;
-
-            let remote_addr: Ipv4Addr = {
-                let mut octets = ip_addr.octets();
-                octets[3] = 1;
-                octets.into()
-            };
-            let _stream = TcpStream::connect((remote_addr, LISTENING_PORT)).unwrap();
-            println!("Established outbound TCP connection.");
+            _ => unreachable!(),
         }
     }
 
-    client.record_success().await?;
+    let mut address_stream = ic.client
+        .subscribe("peers")
+        .await
+        .take(ic.params.test_instance_count as usize)
+        .map(|a| Multiaddr::from_str(&a.unwrap()).unwrap())
+        // Note: we sidestep simultaneous connect issues by ONLY connecting to peers
+        // who published their addresses before us (this is enough to dedup and avoid
+        // two peers dialling each other at the same time).
+        //
+        // We can do this because sync service pubsub is ordered.
+        .take_while(|a| futures::future::ready(a != &local_addr));
 
+    ic.client.publish("peers", local_addr.to_string()).await?;
+
+    while let Some(addr) = address_stream.next().await {
+        swarm.dial(addr).unwrap();
+    }
+
+    let mut connected = HashSet::new();
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                connected.insert(peer_id);
+                if connected.len() == ic.params.test_instance_count as usize - 1 {
+                    break;
+                }
+            }
+            e => {
+                println!("Event: {:?}", e)
+            }
+        }
+    }
+
+    ic.client
+        .signal_and_wait("connected", ic.params.test_instance_count)
+        .await?;
+
+    let mut pinged = HashSet::new();
+
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::Behaviour(ping::PingEvent {
+                peer,
+                result: Ok(ping::PingSuccess::Ping { .. }),
+            }) => {
+                pinged.insert(peer);
+                if pinged.len() == ic.params.test_instance_count as usize - 1 {
+                    break;
+                }
+            }
+            e => {
+                println!("Event: {:?}", e)
+            }
+        }
+    }
+
+    {
+        let all_instances_done = ic.client
+            .signal_and_wait("initial", ic.params.test_instance_count)
+            .boxed_local();
+
+        let mut stream = swarm.take_until(all_instances_done);
+
+        loop {
+            match stream.next().await {
+                Some(e) => {
+                    println!("Event: {:?}", e)
+                }
+                None => break,
+            }
+        }
+    }
+
+    ic.client.record_success().await?;
     Ok(())
 }
