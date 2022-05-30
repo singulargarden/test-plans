@@ -24,7 +24,7 @@ runs:
     - name: Run the daemon or configure the client
       shell: bash
       run: |
-        if [[ TESTGROUND_ENDPOINT ]]; then
+        if [[ ! -z "${TESTGROUND_ENDPOINT}" ]]; then
           mkdir -p ~/testground/;
           cat <<EOF >> ~/testground/.env.toml
 
