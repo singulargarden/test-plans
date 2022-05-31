@@ -11,7 +11,7 @@ if [ "${GITHUB_ACTIONS}" = "true" ]; then SLEEP_TIME=20; else SLEEP_TIME=2; fi
 
 testground healthcheck --runner local:docker --fix
 
-testground run composition -f "${SCRIPT_DIR}/_compositions/2-versions.toml"  \
+testground run composition -f "${COMPOSITION_FILE}"  \
     --metadata-repo "${GITHUB_REPOSITORY}"            \
     --metadata-branch "${GITHUB_REF#refs/heads/}"     \
     --metadata-commit "${GITHUB_SHA}" | tee run.out
