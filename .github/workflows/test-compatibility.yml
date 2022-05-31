@@ -40,14 +40,19 @@ jobs:
           testground plan import --from ./ --name libp2p
       - name: Run the composition file
         working-directory: ./test-plans
+        # run: |
+        #   GitReference=${{ inputs.custom_git_reference }} testground run composition \
+        #     -f ${{ inputs.composition_file }}                 \
+        #     --metadata-repo "${GITHUB_REPOSITORY}"            \
+        #     --metadata-branch "${GITHUB_REF#refs/heads/}"     \
+        #     --metadata-commit "${GITHUB_SHA}"                 \
+        #     --collect-file ~/test-plans/result.tgz            \
+        #     --collect --wait | tee run.out
         run: |
-          GitReference=${{ inputs.custom_git_reference }} testground run composition \
-            -f ${{ inputs.composition_file }}                 \
-            --metadata-repo "${GITHUB_REPOSITORY}"            \
-            --metadata-branch "${GITHUB_REF#refs/heads/}"     \
-            --metadata-commit "${GITHUB_SHA}"                 \
-            --collect-file ~/test-plans/result.tgz            \
-            --collect --wait | tee run.out
+          GitReference=${{ inputs.custom_git_reference }} ./ping-interop/run.sh
+        env:
+          GitReference: ${{ inputs.custom_git_reference }}
+          COMPOSITION_FILE: ${{ inputs.composition_file }}
       # TODO: Verify / Add the long form collect script.
       - uses: actions/upload-artifact@v3
         if: ${{ failure() }}
