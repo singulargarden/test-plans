@@ -15,9 +15,9 @@ on:
 jobs:
   run_test:
     name: Run a test with different versions
-    runs-on: [self-hosted, linux, x64, large-linux-runner]
+    runs-on: ubuntu-latest
     env:
-      TEST_PLAN_REPO: "laurentsenta/test-plans"
+      TEST_PLAN_REPO: "singulargarden/test-plans"
       TEST_PLAN_BRANCH: "feat/ping-interop-2"
       INPUT_COMPOSITION_FILE: ${{ inputs.composition_file }}
       INPUT_CUSTOM_GIT_REFERENCE: ${{ inputs.custom_git_reference }}
